@@ -5,8 +5,8 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  INSTANCE_TYPE: t3.micro
-  AMI_ID: ami-0c55b159cbfafe1f0 # Amazon Linux 2
+  INSTANCE_TYPE: t2.micro
+  AMI_ID: ami-08982f1c5bf93d976
   RUNNER_LABEL: ephemeral-runner
   RUNNER_NAME: aws-runner
 

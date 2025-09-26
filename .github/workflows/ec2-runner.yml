@@ -126,19 +126,26 @@ jobs:
           echo "Launched instance $instance_id with public IP $public_ip"
 
       # 6. Install GitHub Actions Runner
-      - name: Install Runner on EC2
+      - name: Install GitHub Runner on EC2 via SSM
         run: |
-          echo "Installing GitHub runner on EC2..."
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ steps.launch-ec2.outputs.public_ip }} << 'EOF'
-            sudo yum update -y
-            sudo yum install -y curl tar
-            mkdir actions-runner && cd actions-runner
-            curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz
-            tar xzf actions-runner.tar.gz
-            ./config.sh --url https://github.com/${{ github.repository }} \
-                        --token ${{ steps.get-token.outputs.runner_token }} \
-                        --name $RUNNER_NAME \
-                        --labels $RUNNER_LABEL \
-                        --unattended
-            nohup ./run.sh &
-          EOF
+          instance_id=${{ steps.launch-ec2.outputs.instance_id }}
+
+          echo "Waiting for EC2 instance $instance_id to register with SSM..."
+          aws ssm wait instance-available --instance-ids $instance_id
+
+          echo "Installing GitHub runner using SSM..."
+
+          aws ssm send-command \
+            --targets "Key=instanceIds,Values=$instance_id" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Install GitHub Actions Runner" \
+            --parameters 'commands=[
+              "sudo yum update -y",
+              "sudo yum install -y curl tar",
+              "mkdir -p /home/ec2-user/actions-runner && cd /home/ec2-user/actions-runner",
+              "curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz",
+              "tar xzf actions-runner.tar.gz",
+              "./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name $RUNNER_NAME --labels $RUNNER_LABEL --unattended",
+              "nohup ./run.sh &"
+            ]'
+

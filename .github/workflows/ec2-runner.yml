@@ -131,7 +131,6 @@ jobs:
           instance_id=${{ steps.launch-ec2.outputs.instance_id }}
 
           echo "Waiting for EC2 instance $instance_id to register with SSM..."
-          aws ssm wait instance-available --instance-ids $instance_id
 
           echo "Installing GitHub runner using SSM..."
 

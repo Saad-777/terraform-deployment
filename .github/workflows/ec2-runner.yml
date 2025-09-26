@@ -147,17 +147,16 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "Install GitHub Actions Runner" \
             --parameters 'commands=[
-              "sudo yum update -y",
-              "sudo yum install -y curl tar",
-              "mkdir -p /home/ec2-user/actions-runner && cd /home/ec2-user/actions-runner",
-              "curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz",
-              "tar xzf actions-runner.tar.gz",
-              "RUNNER_NAME=runner-'$(date +%s)'",
-              "RUNNER_LABELS=self-hosted,linux,x64",
-              "./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name $RUNNER_NAME --labels $RUNNER_LABELS --unattended",
-              "sudo ./svc.sh install ec2-user",
+              "mkdir actions-runner && cd actions-runner",
+              "curl -o actions-runner-linux-x64-2.313.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.313.0/actions-runner-linux-x64-2.313.0.tar.gz",
+              "tar xzf ./actions-runner-linux-x64-2.313.0.tar.gz",
+              "sudo dnf makecache --refresh",
+              "sudo dnf -y install lld",
+              "sudo yum install libicu -y",
+              "./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name runner-$(hostname)-$(date +%s) --labels self-hosted,linux,x64 --unattended",
+              "./svc.sh install $USER",
               "sudo ./svc.sh start",
-              "echo Runner installation completed"
+              "echo Runner installation completed successfully"
             ]' \
             --query 'Command.CommandId' --output text)
           
@@ -178,4 +177,3 @@ jobs:
             echo "Command status: $STATUS ($i/30)"
             sleep 10
           done
-

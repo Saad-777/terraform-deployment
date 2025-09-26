@@ -149,4 +149,5 @@ jobs:
               "sudo ./svc.sh install ec2-user",  # Install the service to run as ec2-user
               "sudo ./svc.sh start",             # Start the systemd service
               "sudo ./svc.sh status"             # Optional: Check status for log
+              ]'
 

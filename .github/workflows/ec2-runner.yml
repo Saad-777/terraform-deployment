@@ -1,14 +1,18 @@
 name: AWS EC2 Self-Hosted Runner
 
 on:
-  workflow_dispatch:  # Trigger manually
+  workflow_dispatch: # Manual trigger only
 
 env:
   AWS_REGION: us-east-1
   INSTANCE_TYPE: t3.micro
-  AMI_ID: ami-0c55b159cbfafe1f0 # Amazon Linux 2 AMI example
+  AMI_ID: ami-0c55b159cbfafe1f0 # Amazon Linux 2
   RUNNER_LABEL: ephemeral-runner
   RUNNER_NAME: aws-runner
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   launch-runner:
@@ -18,7 +22,9 @@ jobs:
       instance_id: ${{ steps.launch-ec2.outputs.instance_id }}
       public_ip: ${{ steps.launch-ec2.outputs.public_ip }}
       runner_token: ${{ steps.get-token.outputs.runner_token }}
+
     steps:
+      # 1. Configure AWS CLI
       - name: Configure AWS CLI
         run: |
           aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -26,6 +32,53 @@ jobs:
           aws configure set aws_session_token ${{ secrets.AWS_SESSION_TOKEN }}
           aws configure set default.region $AWS_REGION
 
+      # 2. Ensure Default VPC Exists
+      - name: Ensure Default VPC
+        id: ensure-vpc
+        run: |
+          echo "Checking for default VPC..."
+          default_vpc=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+
+          if [ "$default_vpc" == "None" ] || [ -z "$default_vpc" ]; then
+            echo "No default VPC found. Creating one..."
+            default_vpc=$(aws ec2 create-default-vpc --query 'Vpc.VpcId' --output text)
+            echo "Created default VPC: $default_vpc"
+          else
+            echo "Default VPC exists: $default_vpc"
+          fi
+
+          echo "vpc_id=$default_vpc" >> $GITHUB_OUTPUT
+
+      # 3. Ensure Default Security Group Exists and Open SSH
+      - name: Ensure Security Group
+        id: ensure-sg
+        run: |
+          vpc_id=${{ steps.ensure-vpc.outputs.vpc_id }}
+
+          echo "Checking for default security group in VPC $vpc_id..."
+          default_sg=$(aws ec2 describe-security-groups \
+            --filters Name=vpc-id,Values=$vpc_id Name=group-name,Values=default \
+            --query 'SecurityGroups[0].GroupId' --output text)
+
+          if [ "$default_sg" == "None" ] || [ -z "$default_sg" ]; then
+            echo "Default security group missing, creating one..."
+            default_sg=$(aws ec2 create-security-group \
+              --group-name default \
+              --description "Default SG for GH Runner" \
+              --vpc-id $vpc_id \
+              --query 'GroupId' --output text)
+          else
+            echo "Default security group exists: $default_sg"
+          fi
+
+          echo "Authorizing SSH inbound rule (22)..."
+          aws ec2 authorize-security-group-ingress \
+            --group-id $default_sg \
+            --protocol tcp --port 22 --cidr 0.0.0.0/0 || echo "Rule already exists"
+
+          echo "sg_id=$default_sg" >> $GITHUB_OUTPUT
+
+      # 4. Get GitHub Runner Registration Token
       - name: Get GitHub Runner Registration Token
         id: get-token
         run: |
@@ -34,38 +87,32 @@ jobs:
             | jq -r .token)
           echo "runner_token=$token" >> $GITHUB_OUTPUT
 
-
-      - name: Get Default Security Group
-        id: get-sg
-        run: |
-          default_sg=$(aws ec2 describe-security-groups \
-            --filters Name=vpc-id,Values=$(aws ec2 describe-vpcs \
-              --filters Name=isDefault,Values=true \
-              --query 'Vpcs[0].VpcId' --output text) \
-            --query 'SecurityGroups[?GroupName==`default`].GroupId' --output text)
-
-          echo "default_sg=$default_sg" >> $GITHUB_OUTPUT
-          echo "Default security group: $default_sg"
-
-          # Ensure SSH is allowed from anywhere (port 22)
-          aws ec2 authorize-security-group-ingress \
-            --group-id $default_sg \
-            --protocol tcp --port 22 --cidr 0.0.0.0/0 || true
-
-      # Launch EC2 instance in default VPC
+      # 5. Launch EC2 Instance
       - name: Launch EC2 Instance
         id: launch-ec2
         run: |
-          echo "Launching EC2 instance..."
+          vpc_id=${{ steps.ensure-vpc.outputs.vpc_id }}
+          sg_id=${{ steps.ensure-sg.outputs.sg_id }}
 
+          echo "Finding a subnet in default VPC $vpc_id..."
+          subnet_id=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$vpc_id --query 'Subnets[0].SubnetId' --output text)
+
+          if [ "$subnet_id" == "None" ] || [ -z "$subnet_id" ]; then
+            echo "No subnet found in default VPC. Cannot continue."
+            exit 1
+          fi
+
+          echo "Launching EC2 instance in subnet $subnet_id..."
           instance_id=$(aws ec2 run-instances \
             --image-id $AMI_ID \
             --instance-type $INSTANCE_TYPE \
             --iam-instance-profile Name=EC2RunnerRole \
-            --security-group-ids ${{ steps.get-sg.outputs.default_sg }} \
+            --subnet-id $subnet_id \
+            --security-group-ids $sg_id \
+            --associate-public-ip-address \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=GH-Runner}]' \
             --query 'Instances[0].InstanceId' --output text)
-          
+
           echo "Waiting for instance to be running..."
           aws ec2 wait instance-running --instance-ids $instance_id
 
@@ -78,7 +125,7 @@ jobs:
 
           echo "Launched instance $instance_id with public IP $public_ip"
 
-      # SSH into the instance and install GitHub runner
+      # 6. Install GitHub Actions Runner
       - name: Install Runner on EC2
         run: |
           echo "Installing GitHub runner on EC2..."
@@ -88,9 +135,10 @@ jobs:
             mkdir actions-runner && cd actions-runner
             curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz
             tar xzf actions-runner.tar.gz
-            ./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name $RUNNER_NAME --labels $RUNNER_LABEL --unattended
+            ./config.sh --url https://github.com/${{ github.repository }} \
+                        --token ${{ steps.get-token.outputs.runner_token }} \
+                        --name $RUNNER_NAME \
+                        --labels $RUNNER_LABEL \
+                        --unattended
             nohup ./run.sh &
           EOF
-
-
-          

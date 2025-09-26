@@ -129,12 +129,20 @@ jobs:
       - name: Install GitHub Runner on EC2 via SSM
         run: |
           instance_id=${{ steps.launch-ec2.outputs.instance_id }}
-
           echo "Waiting for EC2 instance $instance_id to register with SSM..."
-
+          
+          # Wait for SSM registration
+          for i in {1..30}; do
+            if aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$instance_id" --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null | grep -q "Online"; then
+              echo "Instance registered with SSM"
+              break
+            fi
+            echo "Waiting for SSM registration... ($i/30)"
+            sleep 10
+          done
+          
           echo "Installing GitHub runner using SSM..."
-
-          aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --targets "Key=instanceIds,Values=$instance_id" \
             --document-name "AWS-RunShellScript" \
             --comment "Install GitHub Actions Runner" \
@@ -144,7 +152,30 @@ jobs:
               "mkdir -p /home/ec2-user/actions-runner && cd /home/ec2-user/actions-runner",
               "curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz",
               "tar xzf actions-runner.tar.gz",
-              "./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name $RUNNER_NAME --labels $RUNNER_LABEL --unattended",
-              "nohup ./run.sh &"
-            ]'
+              "RUNNER_NAME=runner-'$(date +%s)'",
+              "RUNNER_LABELS=self-hosted,linux,x64",
+              "./config.sh --url https://github.com/${{ github.repository }} --token ${{ steps.get-token.outputs.runner_token }} --name $RUNNER_NAME --labels $RUNNER_LABELS --unattended",
+              "sudo ./svc.sh install ec2-user",
+              "sudo ./svc.sh start",
+              "echo Runner installation completed"
+            ]' \
+            --query 'Command.CommandId' --output text)
+          
+          echo "Command ID: $COMMAND_ID"
+          echo "Waiting for command completion..."
+          
+          # Wait for command to complete
+          for i in {1..30}; do
+            STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$instance_id" --query 'Status' --output text 2>/dev/null)
+            if [ "$STATUS" = "Success" ]; then
+              echo "Runner installation completed successfully"
+              break
+            elif [ "$STATUS" = "Failed" ]; then
+              echo "Runner installation failed"
+              aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$instance_id" --query 'StandardErrorContent' --output text
+              exit 1
+            fi
+            echo "Command status: $STATUS ($i/30)"
+            sleep 10
+          done
 

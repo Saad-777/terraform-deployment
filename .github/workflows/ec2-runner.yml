@@ -2,6 +2,7 @@ name: AWS EC2 Self-Hosted Runner
 
 on:
   workflow_dispatch: # Manual trigger only
+  workflow_call:     # <--- Add this line
 
 env:
   AWS_REGION: us-east-1

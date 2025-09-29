@@ -98,7 +98,7 @@ jobs:
         run: |
           cp install-runner.sh user_data_custom.sh
           sed -i "s|{{GITHUB_REPO_URL}}|https://github.com/${{ github.repository }}|g" user_data_custom.sh
-          sed -i "s|{{GITHUB_TOKEN}}|${{ steps.get-token.outputs.runner_token }}|g" user_data_custom.sh
+          sed -i "s|{{GITHUB_TOKEN}}|${{ secrets.GH_PAT }}|g" user_data_custom.sh
           sed -i "s|{{RUNNER_NAME}}|runner-$(date +%s)|g" user_data_custom.sh
           echo "User Data script prepared with actual values"
 

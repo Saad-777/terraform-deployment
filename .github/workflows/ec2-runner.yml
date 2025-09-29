@@ -1,8 +1,8 @@
 name: AWS EC2 Self-Hosted Runner
 
 on:
-  workflow_dispatch: # Manual trigger only
-  workflow_call:     # <--- Add this line
+  workflow_dispatch: 
+  workflow_call:     
     outputs:
        instance_id:
         description: "EC2 instance ID"

@@ -7,6 +7,15 @@ on:
         description: 'Database password for RDS'
         required: true
         type: string
+      terraform-action:
+        description: 'Terraform Action to do'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
 
 jobs:
   setup-runner:
@@ -44,10 +53,16 @@ jobs:
         run: terraform init
 
       - name: Terraform Plan
+        if: github.event.inputs.terraform-action == 'plan'
         run: terraform plan -var-file="config/terraform.tfvars" -var "db_password=${{ github.event.inputs.db_password }}"
 
       - name: Terraform Apply
+        if: github.event.inputs.terraform-action == 'apply'
         run: terraform apply -auto-approve -var-file="config/terraform.tfvars" -var "db_password=${{ github.event.inputs.db_password }}"
+
+      - name: Terraform Destroy
+        if: github.event.inputs.terraform-action == 'destroy'
+        run: terraform destroy -auto-approve
 
 
   cleanup-runner:

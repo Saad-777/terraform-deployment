@@ -87,6 +87,8 @@ jobs:
             | jq -r .token)
           echo "runner_token=$token" >> $GITHUB_OUTPUT
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Prepare User Data Script
         run: |

@@ -48,3 +48,30 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply -auto-approve -var-file="config/terraform.tfvars" -var "db_password=${{ github.event.inputs.db_password }}"
+
+
+  cleanup-runner:
+    name: Terminate EC2 Runner
+    needs: [terraform, setup-runner]
+    runs-on: ubuntu-latest
+    if: always() # Ensures cleanup runs even if previous jobs fail
+
+    steps:
+      - name: Terminate EC2 Instance
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_REGION: us-east-1
+          INSTANCE_ID: ${{ needs.setup-runner.outputs.instance_id}}
+        run: |
+          if [ -n "$INSTANCE_ID" ]; then
+            echo "Terminating EC2 instance $INSTANCE_ID"
+            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+            aws configure set aws_session_token $AWS_SESSION_TOKEN
+            aws configure set default.region $AWS_REGION
+            aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+          else
+            echo "No instance ID found, skipping termination."
+          fi

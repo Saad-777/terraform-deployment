@@ -82,9 +82,10 @@ jobs:
       - name: Get GitHub Runner Registration Token
         id: get-token
         run: |
-          token=$(curl -sX POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          token=$(curl -v -sX POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token \
             | jq -r .token)
+          echo $token
           echo "runner_token=$token" >> $GITHUB_OUTPUT
 
       - name: Checkout repository

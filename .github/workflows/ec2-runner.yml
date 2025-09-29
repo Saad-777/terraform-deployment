@@ -3,6 +3,10 @@ name: AWS EC2 Self-Hosted Runner
 on:
   workflow_dispatch: # Manual trigger only
   workflow_call:     # <--- Add this line
+    outputs:
+       instance_id:
+        description: "EC2 instance ID"
+        value: ${{ jobs.launch-runner.outputs.instance_id }}
 
 env:
   AWS_REGION: us-east-1

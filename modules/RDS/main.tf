@@ -54,7 +54,7 @@ resource "aws_security_group" "rds_sg" {
 }
 
 resource "aws_secretsmanager_secret" "wordpress-secrets" {
-  name        = "${terraform.workspace}-${var.project_name}-db-credentials"
+  name        = "Saad-${terraform.workspace}-${var.project_name}-db-credentials"
   description = "RDS DB credentials for ${var.project_name} WordPress application"
 
   tags = {
